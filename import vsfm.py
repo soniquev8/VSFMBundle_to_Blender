@@ -18,6 +18,13 @@ _# ##### BEGIN GPL LICENSE BLOCK #####
 
 # <pep8-80 compliant>
 
+# THIS CODE IS CURRENTLY IN A NON-FUNCTIONING STATE
+# While I have a general knowledge of Python, 
+#       the Blender API is a tad bit confusing to me.
+#       I'm currently studying it so I have a better understanding of how to 
+#       adapt Konrad's Code to better suit VSFM Packaged data, as well as 
+#       alter its functionality.
+
 bl_info = {
     "name": "Import VSFM format",
     "author": "Konrad Koelzer, Brad Stansell",
@@ -25,7 +32,7 @@ bl_info = {
     "blender": (2, 6, 2),
     "location": "File > Import",
     "description": "Import Bundler cameras, images and point cloud from a "
-                   "bundled scene",
+                   "VSFM bundled scene",
     "warning": "",
     "wiki_url": "",
     "tracker_url": "",
