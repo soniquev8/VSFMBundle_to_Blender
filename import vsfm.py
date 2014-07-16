@@ -1,4 +1,4 @@
-_# ##### BEGIN GPL LICENSE BLOCK #####
+# ##### BEGIN GPL LICENSE BLOCK #####
 #
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License
@@ -16,326 +16,190 @@ _# ##### BEGIN GPL LICENSE BLOCK #####
 #
 # ##### END GPL LICENSE BLOCK #####
 
-# <pep8-80 compliant>
-
-# THIS CODE IS CURRENTLY IN A NON-FUNCTIONING STATE
-# While I have a general knowledge of Python, 
-#       the Blender API is a tad bit confusing to me.
-#       I'm currently studying it so I have a better understanding of how to 
-#       adapt Konrad's Code to better suit VSFM Packaged data, as well as 
-#       alter its functionality.
-
 bl_info = {
-    "name": "Import VSFM format",
-    "author": "Konrad Koelzer, Brad Stansell",
-    "version": (1, 0),
-    "blender": (2, 6, 2),
-    "location": "File > Import",
-    "description": "Import Bundler cameras, images and point cloud from a "
-                   "VSFM bundled scene",
+    "name": "Import VSFM camera",
+    "author": "Brad Stansell",
+    "version": (0, 8),
+    "blender": (2, 63, 0),
+    "location": "File > Import > VSFM camera",
+    "description": "Imports a Blender (2.4x or 2.5x) Python script from VSFM",
     "warning": "",
     "wiki_url": "",
     "tracker_url": "",
-    "support": 'TESTING',
     "category": "Import-Export"}
 
-# Copyright (C) 2012: Konrad Koelzer, koelzk at web dot de
-
-# To support reload properly, try to access a package var,
-# if it's there, reload everything
-
-
+#"""
+# This script loads a Blender Python script from the VSFM camera
+# tracker program into Blender 2.5x+.
+#
+# It processes the script as a text file and not as a Python executable
+# because of the incompatible Python APIs of Blender 2.4x/2.5x/2.6x.
+# """
 
 import bpy
-from bpy.props import CollectionProperty, StringProperty, BoolProperty
-from bpy_extras.io_utils import ImportHelper, ExportHelper
-from bpy_extras.object_utils import AddObjectHelper, object_data_add
+from bpy.props import *
+import mathutils
+import os
+import string
 import math
+from pathlib import *
+import fileinput
 from math import radians, degrees
 from mathutils import Matrix, Vector
-import os
-import os.path
 
-class BundlePoint:
-    def __init__(self, bfr):
-        self.position = bfr.readFloatItems()
-        self.color = bfr.readIntItems()
-        bfr.readLine() # Skip mapped image features
+def voodoo_import(filepath,ld_cam,directory):
 
-class BundleCamera:
-    def __init__(self, bfr):
-            self.focal_length, self.k1, self.k2 = bfr.readFloatItems()
-            self.rotation = [bfr.readFloatItems(),
-                             bfr.readFloatItems(),
-                             bfr.readFloatItems()]
-            self.translation = bfr.readFloatItems()
-            self.image_path = ""
-            self.world = self.getWorld()
-            # Set if camera contains valid data:
-            self.valid = self.focal_length > 0.0
+    #print(filepath)
+    print("Importing camera data")
+    # Setup new camera specifically for VSFM data
+    bpy.ops.object.camera_add()
+    bpy.context.active_object.name = "VSFM Camera"
+    bpy.context.active_object.data.name = "VSFM Camera"
+    VSFMObj = bpy.data.objects["VSFM Camera"]
+    VSFMCam = bpy.data.cameras["VSFM Camera"]
 
-    def getWorld(self):
-        t = Vector(self.translation).to_4d()
-        mr = Matrix()
-        for row in range(3):
-            mr[row][0:3] = self.rotation[row]
+    cameraDataLines = open(filepath,'r').readlines()
+    directory = os.path.dirname(filepath)
+    imagesDir = os.path.join(directory, 'visualize')
+    imagelist = os.listdir(imagesDir)
 
-        mr.transpose() # = Inverse rotation
+    imageClip = bpy.ops.clip.open(directory=imagesDir,
+                      files=[{"name":"00000000.jpg", "name":"00000000.jpg"}],
+                      relative_path=True)
 
-        p = -(mr * t) # Camera position in world coordinates
-        p[3] = 1.0
+   
+    
+    # add an image size detection subroutine
+    width = 3264.0
+    height = 2448.0
+    corresponding_frame = 1
+    xrot = Matrix.Rotation(radians(90.0), 4, 'X')
 
-        m = mr.copy()
-        m.col[3] = p # Set translation to camera position
-        return m
+#      code  for testing purposes
+# f = os.path.abspath('/Volumes/Data/Desktop/church reconstruction/churchdense.nvm.cmvs/00/cameras_v2.txt')
+# parent = os.path.dirname(f)
+# imagedir = os.path.join(parent, 'visualize')
+# print(f)
+# print(parent)
+# print(imagedir)
+# imagelist = os.listdir(imagedir)
+# print(imagelist)
+# cameraDataLines = open(f, 'r').readlines()
 
-
-class BundleFileReader:
-    def __init__(self, filepath):
-        f = open(filepath, "r")
-        self.lines = list(map(lambda x: x.strip(), f.readlines()))
-        self.row = 0
-        self.cameras = []
-        self.points = []
-
-        # Read file content:
-        self.readContent()
-
-    def readLine(self):
-        while self.row < len(self.lines):
-            self.line = self.lines[self.row]
-            self.row += 1
-            # Skip empty lines and comments:
-            if len(self.line) > 0 and not self.line.startswith("#"):
-                return self.line
-        return None # Reached end
-
-    def readItems(self):
-        return self.readLine().split(" ")
-
-    def readIntItems(self):
-        return tuple(map(int, self.readLine().split(" ")))
-
-    def readFloatItems(self):
-        return tuple(map(float, self.readLine().split(" ")))
-
-    def readCameras(self, cameraCount):
-        for index in range(cameraCount):
-            # Add cameras:
-            camera = BundleCamera(self)
-            if camera.valid:
-                self.cameras.append(camera) # Only add valid cameras
+# cameras_v2.txt file format (per camera)
+# ==========================
+# 0  Filename (of the undistorted image in visualize sub-folder)
+# 1  Original filename
+# 2  * Focal Length (of the undistorted image)
+# 3  2-vec Principal Point (image center)
+# 4  * 3-vec Translation T (as in P = K[R T])
+# 5  3-vec Camera Position C (as in P = K[R -RC])
+# 6  3-vec Axis Angle format of R
+# 7  4-vec Quaternion format of R
+# 8  * row1 Matrix format of R (3 items)
+# 9  * row2 Matrix format of R (3 items)
+# 10 * row3 Matrix format of R (3 items)
+# 11 [Normalized radial distortion] = [radial distortion] * [focal length]^2
+# 12 3-vec Lat/Lng/Alt from EXIF
 
 
-    def readPoints(self, pointCount):
-        for index in range(pointCount):
-            # Add points:
-            self.points.append(BundlePoint(self))
+    for filename in imagelist:
+        # Find the line in cameras_v2.txt that correlates with the file name
+        cameraStartLine = cameraDataLines.index(filename + '\n')
+        
+        temp = (cameraDataLines[cameraStartLine + 2].strip())
+        focal_length = float(temp)
 
-    def readContent(self):
-        cameraCount, pointCount = map(int, self.readItems())
-        self.readCameras(cameraCount)
-        self.readPoints(pointCount)
-        print("Found %d valid cameras and %d points." % (len(self.cameras),
-              len(self.points)))
-
-
-    def addImageListFile(self, filepath):
-        # Load image paths:
-        f = open(filepath, "r")
-        paths = list(map(
-            lambda x: os.path.basename(x.split()[0]), f.readlines()))
-        f.close()
-
-        # Map to cameras:
-        for index in range(len(self.cameras)):
-            self.cameras[index].image_path = paths[index]
-
-def load_scene(filepath):
-    # Load bundle file:
-    bfr = BundleFileReader(os.path.join(filepath, "bundle", "bundle.out"))
-    image_list_path = os.path.join(filepath, "list.txt")
-    bfr.addImageListFile(image_list_path)
-    return bfr
-
-#### BLENDER SCENE MANIPULATION ####
-
-xrot = Matrix.Rotation(radians(90.0), 4, 'X')
-
-def add_obj(data, objName):
-    scn = bpy.context.scene
-
-    for o in scn.objects:
-        o.select = False
-
-    nobj = bpy.data.objects.new(objName, data)
-    #nobj.rotation_euler = [radians(90.0), 0.0, 0.0]
-    scn.objects.link(nobj)
-    nobj.select = True
-
-    if scn.objects.active is None or scn.objects.active.mode == 'OBJECT':
-        scn.objects.active = nobj
-    return nobj
-
-
-def addImagePlane(camera, bimage, width, height, focal_length, name):
-    global xrot
-    # Create mesh for image plane:
-    mesh = bpy.data.meshes.new(name)
-    mesh.update()
-    mesh.validate()
-    w = camera.world
-    plane_distance = 1.0 # Distance from camera position
-    position = w.col[3]
-    # Right vector in view frustum at plane_distance:
-    right = Vector((1, 0, 0)) * (width / focal_length) * plane_distance
-    # Up vector in view frustum at plane_distance:
-    up = Vector((0, 1, 0)) * (height / focal_length) * plane_distance
-    # Camera view direction:
-    view_dir = -Vector((0, 0, 1)) * plane_distance
-    plane_center = view_dir
-
-    corners = ((-0.5, -0.5),
-               (+0.5, -0.5),
-               (+0.5, +0.5),
-               (-0.5, +0.5))
-    points = [(plane_center + c[0] * right + c[1] * up)[0:3] for c in corners]
-    mesh.from_pydata(points, [], [[0, 1, 2, 3]])
-
-    # Assign image to face of image plane:
-    uvmap = mesh.uv_textures.new()
-    face = uvmap.data[0]
-    face.image = bimage
-
-    # Add mesh to new image plane object:
-    meshobj = add_obj(mesh, name)
-    meshobj.matrix_world = xrot * w
-    mesh.update()
-    mesh.validate()
-    return meshobj
-
-
-#Rewrite this portion to handle camera addition using bpy.ops.object.camera_add()
-def addCameratoCurrentScene():
-    bpy.ops.object.camera_add(view_align=False, enter_editmode=False, location=(0, 0, 0), rotation=(0, 0, 0), layers=(False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False))
-
-
-def addToBlenderScene(bfr, scene_path):
-    global xrot
-    print("Adding point cloud...")
-    name = "VSFM Point Cloud"
-    number = int[0]
-    while True:
-        if bpy.data.meshes.find(name) != '-1':
-            number += 1
-            name = (name + ' ' + number)
-        else:
-            break
-    mesh = bpy.data.meshes.new(name)
-    mesh.update()
-    mesh.validate()
-
-    points = [point.position for point in bfr.points]
-    mesh.from_pydata(points, [], [])
-    meshobj = add_obj(mesh, name)
-    meshobj.matrix_world = xrot
-
-
-    # Adding cameras and image planes:
-
-    # if option is set, add as an image sequence with a driver-based camera
-
-    for index, camera in enumerate(bfr.cameras):
-
-        # Load image:
-        bimage = bpy.data.images.load(
-            os.path.join(scene_path, camera.image_path))
-        if addAsDriver:
-            bpy.ops.sequencer.image_strip_add(directory="", files=[bimage], frame_start=index, frame_end=[index + 1])
-            camera_name = 'VSFM Data'
-            if camera_name is not in bpy.data.cameras:
-
-
-        else
-            camera_name = "Camera %d" % index
-            bcamera = bpy.data.cameras.new(camera_name)
-            bcamera.angle_x = math.atan(width / (camera.focal_length * 2.0)) * 2.0
-            bcamera.angle_y = math.atan(height / (camera.focal_length * 2.0)) * 2.0
-            cameraObj = add_obj(bcamera, camera_name)
-            cameraObj.matrix_world = xrot * camera.world
-        width, height = bimage.size
-
-
-
-
-        # Add image frame:
-            bpy.ops.sequencer.image_strip_add(directory="", files=[bimage], frame_start=index, frame_end=[index + 1])
-        # Add image plane:
-        planeObj = addImagePlane(camera, bimage, width, height,
-                                 camera.focal_length, "Image Plane %d" % index)
-
-        # Group image plane and camera:
-        #Instead, add keyframe to driver
-        group = bpy.data.groups.new("Camera Group %d" % index)
-        group.objects.link(cameraObj)
-        group.objects.link(planeObj)
-
-
-def load(operator, context, filepath = ""):
-    # Set the path to one directory above bundle.rd.out
-    # VSFM dumps the undistorted images into a directory named 'data'
-    scene_path = os.path.pardir()
-    bfr = load_scene(scene_path)
-    addToBlenderScene(bfr, scene_path)
+        temp = (cameraDataLines[cameraStartLine + 4].strip())
+        translate = tuple(map(float, temp.split()))
+        
+        #temp = (cameraDataLines[cameraStartLine + 8].strip())
+        #rot1 = tuple(map(float, temp.split()))
+        #temp = (cameraDataLines[cameraStartLine + 9].strip())
+        #rot2 = tuple(map(float, temp.split()))
+        temp = (cameraDataLines[cameraStartLine + 7].strip())
+        rot3 = tuple(map(float, temp.split()))
+        #rotation = [rot1,
+                  #  rot2,
+                  #  rot3]
+        #world = getWorld(translate, rotation)
+        
+        VSFMCam.angle_x = math.atan(width / (focal_length * 2.0)) * 2.0
+        VSFMCam.angle_y = math.atan(height / (focal_length * 2.0)) * 2.0  
+        VSFMObj.rotation_quaternion = rot3
+        VSFMObj.location = translate
+        #VSFMObj.matrix_world = world * xrot
+        #VSFMCam.keyframe_insert(data_path='angle_x', frame=corresponding_frame)
+        #VSFMCam.keyframe_insert(data_path='angle_y', frame=corresponding_frame)
+        VSFMObj.keyframe_insert(data_path='location', frame=corresponding_frame)
+        VSFMObj.keyframe_insert(data_path='rotation_quaternion', frame=corresponding_frame)
+        VSFMCam.keyframe_insert(data_path='lens', frame=corresponding_frame)
+        #VSFMObj.keyframe_insert(data_path='matrix_world', frame=corresponding_frame)
+        corresponding_frame += 1
     return {'FINISHED'}
 
+def getWorld(translation, rotation):
+    t = Vector(translation).to_4d()
+    mr = Matrix()
+    for row in range(3):
+        mr[row][0:3] = rotation[row]
 
-class ImportBundler(bpy.types.Operator, ImportHelper):
-    '''Load a Bundler scene'''
-    bl_idname = "bundle.rd.out"
-    bl_label = "Import VSFM Bundle"
-    bl_options = {'UNDO'}
+    mr.transpose() # = Inverse rotation
+        
+    p = -(mr * t) # Camera position in world coordinates
+    p[3] = 1.0
 
-    files = CollectionProperty(name="File Path",
-                          description="File path to bundle.out used for " +
-                                      "importing the Bundler scene",
-                          type=bpy.types.OperatorFileListElement)
+    m = mr.copy()
+    m.col[3] = p # Set translation to camera position
+    return m
+     
+#Operator
+class ImportVoodooCamera(bpy.types.Operator):
+    """"""
+    bl_idname = "import.voodoo_camera"
+    bl_label = "Import VSFM data"
+    bl_description = "Load a Blender export script from the VSFM motion tracker"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filepath = StringProperty(name="File Path",
+        description="Filepath used for processing the script",
+        maxlen= 1024,default= "")
+
+    # filter_python = BoolProperty(name="Filter python",
+    # description="",default=True,options={'HIDDEN'})
 
     directory = StringProperty()
 
-    filename_ext = ".rd.out"
-    filter_glob = StringProperty(default="bundle.rd.out", options={'HIDDEN'})
+    load_camera = BoolProperty(name="Load camera",
+        description="Load the camera",
+        default=True)
 
     def execute(self, context):
-        paths = [os.path.join(self.directory, name.name)
-                 for name in self.files]
-        if not paths:
-            paths.append(self.filepath)
-
-        for path in paths:
-            load(self, context, path)
-
+        voodoo_import(self.filepath,self.load_camera,self.directory)
         return {'FINISHED'}
 
+    def invoke(self, context, event):
+        wm = context.window_manager
+        wm.fileselect_add(self)
+        return {'RUNNING_MODAL'}
 
 
-
-def menu_func_import(self, context):
-    self.layout.operator(ImportBundler.bl_idname, text="VSFM Bundle (bundle.rd.out)")
+# Registering / Unregister
+def menu_func(self, context):
+    self.layout.operator(ImportVoodooCamera.bl_idname, text="Voodoo camera", icon='PLUGIN')
 
 
 def register():
     bpy.utils.register_module(__name__)
-
-    bpy.types.INFO_MT_file_import.append(menu_func_import)
+    bpy.types.INFO_MT_file_import.append(menu_func)
 
 
 def unregister():
     bpy.utils.unregister_module(__name__)
+    bpy.types.INFO_MT_file_import.remove(menu_func)
 
-    bpy.types.INFO_MT_file_import.remove(menu_func_import)
 
 if __name__ == "__main__":
     register()
-    #load(None, None, 'scenes/hanau_images_800/bundle/bundle.out')
+
 
