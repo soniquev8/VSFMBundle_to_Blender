@@ -22,7 +22,7 @@ bl_info = {
     "version": (0, 8),
     "blender": (2, 63, 0),
     "location": "File > Import > VSFM camera",
-    "description": "Imports a Blender (2.4x or 2.5x) Python script from VSFM",
+    "description": "Imports a camera_v2.txt file from VSFM",
     "warning": "",
     "wiki_url": "",
     "tracker_url": "",
@@ -42,21 +42,26 @@ import mathutils
 import os
 import string
 import math
-from pathlib import *
 import fileinput
 from math import radians, degrees
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Vector, Quaternion
 
 def voodoo_import(filepath,ld_cam,directory):
 
     #print(filepath)
     print("Importing camera data")
     # Setup new camera specifically for VSFM data
-    bpy.ops.object.camera_add()
+    bpy.ops.object.camera_add(view_align=False,
+                              enter_editmode=False,
+                              location=(0, 0, 0),
+                              rotation=(0, 0, 0),
+                              layers=(True, False, False, False, False, False, False, False, False, False,
+                                      False, False, False, False, False, False, False, False, False, False))
     bpy.context.active_object.name = "VSFM Camera"
     bpy.context.active_object.data.name = "VSFM Camera"
     VSFMObj = bpy.data.objects["VSFM Camera"]
     VSFMCam = bpy.data.cameras["VSFM Camera"]
+    VSFMObj.rotation_mode = 'QUATERNION'
 
     cameraDataLines = open(filepath,'r').readlines()
     directory = os.path.dirname(filepath)
@@ -66,25 +71,22 @@ def voodoo_import(filepath,ld_cam,directory):
     imageClip = bpy.ops.clip.open(directory=imagesDir,
                       files=[{"name":"00000000.jpg", "name":"00000000.jpg"}],
                       relative_path=True)
-
-   
     
-    # add an image size detection subroutine
-    width = 3264.0
-    height = 2448.0
+    #calculate and apply scale keyframe based on size of first image
+    # As far as I can tell, if different images are different aspect ratios,
+    # then a keyframe must be applied to the movie clip aspect ratio, not the camera.
+    # I haven't encountered this yet, but it should be able to be calculated
+    # based on the height and width of the initial image divided by the
+    # image in question, giving us a multiplier of 1 (the initial) size.
+    # also, the background image should be set to crop (I think) if this is needed.
+    firstImage = bpy.data.images.load(
+        os.path.join(imagesDir, "00000000.jpg"))
+    width, height = firstImage.size
+    bpy.context.scene.render.resolution_x = width
+    bpy.context.scene.render.resolution_y = height
+    
     corresponding_frame = 1
     xrot = Matrix.Rotation(radians(90.0), 4, 'X')
-
-#      code  for testing purposes
-# f = os.path.abspath('/Volumes/Data/Desktop/church reconstruction/churchdense.nvm.cmvs/00/cameras_v2.txt')
-# parent = os.path.dirname(f)
-# imagedir = os.path.join(parent, 'visualize')
-# print(f)
-# print(parent)
-# print(imagedir)
-# imagelist = os.listdir(imagedir)
-# print(imagelist)
-# cameraDataLines = open(f, 'r').readlines()
 
 # cameras_v2.txt file format (per camera)
 # ==========================
@@ -95,10 +97,10 @@ def voodoo_import(filepath,ld_cam,directory):
 # 4  * 3-vec Translation T (as in P = K[R T])
 # 5  3-vec Camera Position C (as in P = K[R -RC])
 # 6  3-vec Axis Angle format of R
-# 7  4-vec Quaternion format of R
-# 8  * row1 Matrix format of R (3 items)
-# 9  * row2 Matrix format of R (3 items)
-# 10 * row3 Matrix format of R (3 items)
+# 7  * 4-vec Quaternion format of R
+# 8  row1 Matrix format of R (3 items)
+# 9  row2 Matrix format of R (3 items)
+# 10 row3 Matrix format of R (3 items)
 # 11 [Normalized radial distortion] = [radial distortion] * [focal length]^2
 # 12 3-vec Lat/Lng/Alt from EXIF
 
@@ -111,30 +113,27 @@ def voodoo_import(filepath,ld_cam,directory):
         focal_length = float(temp)
 
         temp = (cameraDataLines[cameraStartLine + 4].strip())
-        translate = tuple(map(float, temp.split()))
-        
-        #temp = (cameraDataLines[cameraStartLine + 8].strip())
-        #rot1 = tuple(map(float, temp.split()))
-        #temp = (cameraDataLines[cameraStartLine + 9].strip())
-        #rot2 = tuple(map(float, temp.split()))
-        temp = (cameraDataLines[cameraStartLine + 7].strip())
+        translate = list(map(float, temp.split()))
+        translate[1]*=-1
+        translate[2]*=-1
+        translate = tuple(translate)
+        temp = (cameraDataLines[cameraStartLine + 8].strip())
+        rot1 = tuple(map(float, temp.split()))
+        temp = (cameraDataLines[cameraStartLine + 9].strip())
+        rot2 = temp.split()
+        rot2 = tuple([float(x)*-1 for x in rot2])
+        temp = (cameraDataLines[cameraStartLine + 10].strip())
         rot3 = tuple(map(float, temp.split()))
-        #rotation = [rot1,
-                  #  rot2,
-                  #  rot3]
-        #world = getWorld(translate, rotation)
+        rot3 = tuple([float(x)*-1 for x in rot3])
+        rotation = [rot1,rot2,rot3]
+        theMatrix = getWorld(translate, rotation)
         
         VSFMCam.angle_x = math.atan(width / (focal_length * 2.0)) * 2.0
         VSFMCam.angle_y = math.atan(height / (focal_length * 2.0)) * 2.0  
-        VSFMObj.rotation_quaternion = rot3
-        VSFMObj.location = translate
-        #VSFMObj.matrix_world = world * xrot
-        #VSFMCam.keyframe_insert(data_path='angle_x', frame=corresponding_frame)
-        #VSFMCam.keyframe_insert(data_path='angle_y', frame=corresponding_frame)
+        VSFMObj.matrix_world = xrot * theMatrix
         VSFMObj.keyframe_insert(data_path='location', frame=corresponding_frame)
         VSFMObj.keyframe_insert(data_path='rotation_quaternion', frame=corresponding_frame)
         VSFMCam.keyframe_insert(data_path='lens', frame=corresponding_frame)
-        #VSFMObj.keyframe_insert(data_path='matrix_world', frame=corresponding_frame)
         corresponding_frame += 1
     return {'FINISHED'}
 
@@ -186,7 +185,7 @@ class ImportVoodooCamera(bpy.types.Operator):
 
 # Registering / Unregister
 def menu_func(self, context):
-    self.layout.operator(ImportVoodooCamera.bl_idname, text="Voodoo camera", icon='PLUGIN')
+    self.layout.operator(ImportVoodooCamera.bl_idname, text="VSFM Cameras File (txt)", icon='PLUGIN')
 
 
 def register():
