@@ -53,15 +53,13 @@ def voodoo_import(filepath,ld_cam,directory):
     # Setup new camera specifically for VSFM data
     bpy.ops.object.camera_add(view_align=False,
                               enter_editmode=False,
-                              location=(0, 0, 0),
-                              rotation=(0, 0, 0),
                               layers=(True, False, False, False, False, False, False, False, False, False,
                                       False, False, False, False, False, False, False, False, False, False))
     bpy.context.active_object.name = "VSFM Camera"
     bpy.context.active_object.data.name = "VSFM Camera"
     VSFMObj = bpy.data.objects["VSFM Camera"]
     VSFMCam = bpy.data.cameras["VSFM Camera"]
-    VSFMObj.rotation_mode = 'QUATERNION'
+    #VSFMObj.rotation_mode = 'QUATERNION'
 
     cameraDataLines = open(filepath,'r').readlines()
     directory = os.path.dirname(filepath)
@@ -87,6 +85,8 @@ def voodoo_import(filepath,ld_cam,directory):
     
     corresponding_frame = 1
     xrot = Matrix.Rotation(radians(90.0), 4, 'X')
+    yrot = Matrix.Rotation(radians(180), 4, 'Y')
+    # Compensating for clip orientation which will start as the world Z axis Up
 
 # cameras_v2.txt file format (per camera)
 # ==========================
@@ -126,23 +126,23 @@ def voodoo_import(filepath,ld_cam,directory):
         rot2 = tuple([float(x)*-1 for x in rot2])
         
         temp = (cameraDataLines[cameraStartLine + 10].strip())
-        rot3 = tuple(map(float, temp.split()))
+        rot3 = temp.split()
         rot3 = tuple([float(x)*-1 for x in rot3])
         
-        #rotation = [rot1,rot2,rot3]
+        rotation = [rot1, rot2, rot3]
         
-        #theMatrix = getWorld(translate, rotation)
+        theMatrix = getWorld(translate, rotation)
         
         FOV = 2 * atan(height/(2*focal_length))
         VSFMCam.angle = FOV
         #temp = (cameraDataLines[cameraStartLine + 7].strip())
         #quatRot = list(map(float, temp.split()))
         #fov = 2 * atan[ image_height / (2*focal_pix) ]  
-        VSFMObj.matrix_world = xrot * theMatrix
+        VSFMObj.matrix_world = xrot * yrot * theMatrix 
         
         
         VSFMObj.keyframe_insert(data_path='location', frame=corresponding_frame)
-        VSFMObj.keyframe_insert(data_path='rotation_quaternion', frame=corresponding_frame)
+        VSFMObj.keyframe_insert(data_path='rotation_euler', frame=corresponding_frame)
         VSFMCam.keyframe_insert(data_path='lens', frame=corresponding_frame)
         corresponding_frame += 1
     return {'FINISHED'}
