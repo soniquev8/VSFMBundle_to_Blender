@@ -43,7 +43,7 @@ import os
 import string
 import math
 import fileinput
-from math import radians, degrees
+from math import radians, degrees, atan
 from mathutils import Matrix, Vector, Quaternion
 
 def voodoo_import(filepath,ld_cam,directory):
@@ -117,20 +117,30 @@ def voodoo_import(filepath,ld_cam,directory):
         translate[1]*=-1
         translate[2]*=-1
         translate = tuple(translate)
+        
         temp = (cameraDataLines[cameraStartLine + 8].strip())
         rot1 = tuple(map(float, temp.split()))
+        
         temp = (cameraDataLines[cameraStartLine + 9].strip())
         rot2 = temp.split()
         rot2 = tuple([float(x)*-1 for x in rot2])
+        
         temp = (cameraDataLines[cameraStartLine + 10].strip())
         rot3 = tuple(map(float, temp.split()))
         rot3 = tuple([float(x)*-1 for x in rot3])
-        rotation = [rot1,rot2,rot3]
-        theMatrix = getWorld(translate, rotation)
         
-        VSFMCam.angle_x = math.atan(width / (focal_length * 2.0)) * 2.0
-        VSFMCam.angle_y = math.atan(height / (focal_length * 2.0)) * 2.0  
+        #rotation = [rot1,rot2,rot3]
+        
+        #theMatrix = getWorld(translate, rotation)
+        
+        FOV = 2 * atan(height/(2*focal_length))
+        VSFMCam.angle = FOV
+        #temp = (cameraDataLines[cameraStartLine + 7].strip())
+        #quatRot = list(map(float, temp.split()))
+        #fov = 2 * atan[ image_height / (2*focal_pix) ]  
         VSFMObj.matrix_world = xrot * theMatrix
+        
+        
         VSFMObj.keyframe_insert(data_path='location', frame=corresponding_frame)
         VSFMObj.keyframe_insert(data_path='rotation_quaternion', frame=corresponding_frame)
         VSFMCam.keyframe_insert(data_path='lens', frame=corresponding_frame)
