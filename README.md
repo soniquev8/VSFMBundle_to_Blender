@@ -16,10 +16,12 @@ Goals
 =====
 
 1. Inspired by this tutorial: http://youtu.be/xjjW2yKjUDM my intent is to alter the script
-    in order to import the referenced images as an image/movie sequence, 1 image per frame.
-    
-2. Instead of creating a seperate camera for each image, I intend to use one camera combined with drivers/keyframes
-    for positioning, rotation, size, focal length, and possibly even lens distortion.
+    in order to import the referenced images as an image/movie sequence, 1 image per frame
+
+2. Recently discovered CloudCompare, an amazing bit of software that does precisely what I'm aiming for.  However it
+    has proven difficult to adapt their code into Python.  As far as I can tell, my math is correct, but the points
+    just aren't lining up the way they do in CC.  They're working with the Bundle file whereas I'm working with the
+    cameras_v2 file, but I believe I've compensated for all the differences.  Sigh... this is a brain buster.  
     
 Advantages
 ==========
